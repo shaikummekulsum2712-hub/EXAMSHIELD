@@ -1,0 +1,71 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>ExamShield KMP - Proctor</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+ :root{--bg:#0f1220;--card:#181c30;--ink:#e8eaf6;--mut:#8b90b0;--acc:#6c7bff;--red:#ff4d5e;--grn:#3ddc97}
+ body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+ header{padding:14px 22px;display:flex;align-items:center;gap:14px;border-bottom:1px solid #2a2f4a}
+ header h1{font-size:20px;margin:0;flex:1} main{display:grid;grid-template-columns:300px 1fr;gap:16px;padding:16px 22px}
+ .card{background:var(--card);border-radius:12px;padding:14px;margin-bottom:14px}
+ h2{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin:0 0 10px}
+ button,textarea{font:inherit;border-radius:8px;border:0} button{background:var(--acc);color:#fff;padding:8px 12px;cursor:pointer;margin:2px 0}
+ button.g{background:#2a2f4a} textarea{width:100%;box-sizing:border-box;background:#0f1220;color:var(--ink);padding:8px;border:1px solid #2a2f4a}
+ #qr{background:#fff;border-radius:10px;padding:6px;width:100%;box-sizing:border-box} #url{font-size:12px;color:var(--mut);word-break:break-all}
+ table{width:100%;border-collapse:collapse;font-size:14px} td,th{padding:7px 6px;text-align:left;border-bottom:1px solid #2a2f4a}
+ th{color:var(--mut);font-weight:500;font-size:12px} .stream{font-family:ui-monospace,monospace;letter-spacing:2px}
+ tr.flag{animation:fl 1s infinite alternate;background:#ff4d5e33} @keyframes fl{to{background:#ff4d5e88}}
+ .pill{background:var(--red);color:#fff;border-radius:99px;padding:2px 8px;font-size:12px}
+ .ok{color:var(--grn)} .lps span{display:inline-block;min-width:22px;text-align:center;border:1px solid #2a2f4a;padding:3px 5px;margin:1px;border-radius:4px;font-family:ui-monospace,monospace}
+ .bar{height:12px;border-radius:6px;background:var(--acc);margin:4px 0} .bar.b{background:var(--red)}
+ @media(max-width:850px){main{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>ExamShield KMP <span style="color:var(--mut);font-weight:400">- live proctor</span></h1><span id="status" class="ok">waiting</span></header>
+<main><div>
+ <div class="card"><h2>Students scan to join</h2><img id="qr" src="/qr.svg" alt="QR"><div id="url"></div></div>
+ <div class="card"><h2>Publish quiz</h2>
+  <button onclick="pub()">Use sample CS quiz</button>
+  <p style="font-size:12px;color:var(--mut)">Or type questions, one per line:<br>question | opt A | opt B | opt C | opt D | correct (1-4)</p>
+  <textarea id="own" rows="4"></textarea><button onclick="pubOwn()">Publish my questions</button>
+  <button class="g" onclick="reset()">Reset exam</button></div>
+ <div class="card"><h2>Demo without phones</h2><button onclick="sim('Aarav','CBIA')">Simulate copy-AI cheater</button>
+  <button onclick="sim('Meera','BIA')">Simulate Circle-to-Search</button><button onclick="sim('Rohan','BPBP')">Simulate split-screen</button>
+  <button class="g" onclick="sim('Honest Hari','')">Simulate honest student</button></div>
+</div><div>
+ <div class="card"><h2>Signatures KMP is hunting for</h2><div id="pats"></div></div>
+ <div class="card"><h2>KMP vs brute force: character comparisons (live)</h2><div id="cmp"></div></div>
+ <div class="card"><h2>Students</h2><table><thead><tr><th>Name</th><th>Q</th><th>Last events</th><th>KMP state</th><th>Status</th></tr></thead><tbody id="rows"></tbody></table></div>
+ <div class="card"><h2>Flags (for teacher review)</h2><div id="flags" style="font-size:14px"></div></div>
+</div></main>
+<script>
+const $=id=>document.getElementById(id);
+const post=(u,b)=>fetch(u,{method:'POST',body:JSON.stringify(b||{})});
+fetch('/api/info').then(r=>r.json()).then(j=>$('url').textContent=j.url);
+async function pub(){await post('/api/publish',{});}
+async function pubOwn(){
+  const qs=$('own').value.split('\n').map(l=>l.split('|').map(s=>s.trim())).filter(p=>p.length>=6)
+   .map(p=>({q:p[0],options:p.slice(1,5),answer:Math.max(0,(parseInt(p[5])||1)-1)}));
+  if(!qs.length){alert('Use: question | A | B | C | D | 1-4');return;}
+  await post('/api/publish',{title:'Teacher quiz',questions:qs});}
+async function reset(){await post('/api/reset');}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function sim(name,pat){
+  await post('/api/join',{name});
+  const seq=('NN'+pat+'N'+(pat?'':'NNBNN')).split('');
+  for(const t of seq){await post('/api/log',{name,token:t,q:1});await sleep(450);} }
+function render(s){
+  $('status').textContent=s.exam.published?('"'+s.exam.title+'" live - '+s.students.length+' students'):'quiz not published';
+  $('pats').innerHTML=Object.entries(s.patterns).map(([p,v])=>
+   '<div style="margin-bottom:8px"><b>'+p+'</b> <span style="color:var(--mut)">'+v.meaning+'</span><div class="lps">LPS: '+
+   v.lps.map(x=>'<span>'+x+'</span>').join('')+'</div></div>').join('');
+  const k=s.totals.kmp_cmp,b=s.totals.brute_cmp,mx=Math.max(k,b,1);
+  $('cmp').innerHTML='<div>KMP: <b>'+k+'</b> comparisons</div><div class="bar" style="width:'+(k/mx*100)+'%"></div>'+
+   '<div>Brute force: <b>'+b+'</b> comparisons</div><div class="bar b" style="width:'+(b/mx*100)+'%"></div>'+
+   '<div style="color:var(--mut);font-size:12px">'+s.totals.events+' events processed. On short honest streams the counts are close (KMP also pays for the first few events). KMP's win: it keeps 1 number per pattern per student, never re-reads events, and is capped at 2 comparisons per event even on adversarial streams (see benchmark).</div>';
+  $('rows').innerHTML=s.students.map(st=>{const f=st.flags.length;
+   return '<tr class="'+(f?'flag':'')+'"><td>'+st.name+'</td><td>'+st.q+'</td><td class="stream">'+st.stream+'</td><td style="font-size:12px">'+
+   Object.entries(st.kmp_state).map(([p,v])=>p+':'+v).join(' ')+'</td><td>'+(f?'<span class="pill">'+f+' flag'+(f>1?'s':'')+'</span>':'<span class="ok">clean</span>')+'</td></tr>';}).join('');
+  const all=[];s.students.forEach(st=>st.flags.forEach(f=>all.push([st.name,f])));
+  $('flags').innerHTML=all.length?all.map(([n,f])=>'<div style="margin-bottom:8px"><span class="pill">'+f.pattern+'</span> <b>'+n+'</b> on question '+f.question+' at '+f.time+
+   '<br><span style="color:var(--mut)">'+f.meaning+' (stream ...'+f.stream_tail+') - reworded question sent to the phone</span></div>').join(''):'<span style="color:var(--mut)">No flags yet.</span>';
+}
+setInterval(async()=>{try{render(await (await fetch('/api/state')).json());}catch(e){}},700);
+</script></body></html>
